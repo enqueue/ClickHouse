@@ -260,9 +260,13 @@ JoinActionRef::JoinActionRef(NodeRawPtr node_, std::shared_ptr<JoinExpressionAct
     {
         if (!data_)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create JoinActionRef nullptr data");
-        auto raw_nodes = data_->actions_dag.getNodes() | std::views::transform([](const auto & node) { return &node; });
+        auto raw_nodes = data_->actions_dag.getNodes() | std::views::transform([](const ActionsDAG::Node & node) { return &node; });
         if (!std::ranges::contains(raw_nodes, node_ptr))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create JoinActionRef for node {} not in actions DAG", node_ptr->result_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot create JoinActionRef for node {} not in actions DAG: [{}] <- {}",
+                    node_ptr->result_name,
+                    fmt::join(raw_nodes | std::views::transform([](const ActionsDAG::Node * node) { return fmt::ptr(node); }), ", "),
+                    fmt::ptr(node_ptr));
     }
 }
 
@@ -324,9 +328,8 @@ ActionsDAG JoinExpressionActions::getSubDAG(JoinActionRef action)
     return getSubDAG(std::views::single(action));
 }
 
-JoinExpressionActions JoinExpressionActions::clone(std::vector<JoinActionRef> & nodes) const
+JoinExpressionActions JoinExpressionActions::clone(ActionsDAG::NodePtrMap & node_map) const
 {
-    ActionsDAG::NodePtrMap node_map;
     auto actions_dag = getActionsDAG()->clone(node_map);
     JoinExpressionActions::Data::NodeToSourceMapping new_expression_sources;
     for (const auto & [node, source] : data->expression_sources)
@@ -338,13 +341,6 @@ JoinExpressionActions JoinExpressionActions::clone(std::vector<JoinActionRef> & 
     }
 
     auto result_data = std::make_shared<Data>(std::move(actions_dag), std::move(new_expression_sources));
-    for (auto & node : nodes)
-    {
-        auto it = node_map.find(node.getNode());
-        if (it == node_map.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find node in node map");
-        node = JoinActionRef(it->second, result_data);
-    }
     return JoinExpressionActions(std::move(result_data));
 }
 

@@ -124,13 +124,7 @@ ExpressionSide getExpressionSide(
     return ExpressionSide::UNKNOWN;
 }
 
-struct JoinConditionPart
-{
-    ActionsDAG left;
-    ActionsDAG right;
-};
-
-using JoinConditionParts = std::vector<JoinConditionPart>;
+using JoinConditionParts = std::vector<ActionsDAG>;
 
 const ActionsDAG::Node & createResultPredicate(
     ActionsDAG & filter_dag,
@@ -148,7 +142,7 @@ const ActionsDAG::Node & createResultPredicate(
 };
 
 
-std::pair<ActionsDAG::NodeRawConstPtrs, bool> extractActionsForJoinCondition(
+std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     ActionsDAG & filter_dag,
     const std::string & filter_name,
     const Names & left_stream_available_columns,
@@ -173,7 +167,7 @@ std::pair<ActionsDAG::NodeRawConstPtrs, bool> extractActionsForJoinCondition(
     /// Extract all conjuncts from filter expression
     auto conjuncts_list = getConjunctsList(predicate);
 
-    ActionsDAG::NodeRawConstPtrs result;
+    JoinConditionParts result;
     std::unordered_set<const ActionsDAG::Node *> conjuncts_to_replace;
     ActionsDAG::NodeRawConstPtrs rejected_conjuncts;
     rejected_conjuncts.reserve(conjuncts_list.size());
@@ -193,7 +187,8 @@ std::pair<ActionsDAG::NodeRawConstPtrs, bool> extractActionsForJoinCondition(
             if ((lhs_side == ExpressionSide::LEFT && rhs_side == ExpressionSide::RIGHT)
              || (lhs_side == ExpressionSide::RIGHT && rhs_side == ExpressionSide::LEFT))
             {
-                result.push_back(conjunct);
+                result.emplace_back(ActionsDAG::cloneSubDAG({ lhs, rhs }, true));
+                conjuncts_to_replace.insert(conjunct);
                 continue;
             }
         }
@@ -304,7 +299,10 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     if (equality_predicates.empty())
         return 0;
 
-    join_step->addConditions(ActionsDAG::cloneSubDAG(equality_predicates, false));
+    for (auto && predicate : equality_predicates)
+    {
+        join_step->addConditions(std::move(predicate));
+    }
 
     if (kind == JoinKind::Cross || kind == JoinKind::Comma)
         join_operator.kind = JoinKind::Inner;

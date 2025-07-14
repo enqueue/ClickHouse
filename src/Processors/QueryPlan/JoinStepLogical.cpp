@@ -169,6 +169,13 @@ JoinStepLogical::JoinStepLogical(
 {
     actions_after_join = std::move(actions_after_join_);
     updateInputHeaders({left_header_, right_header_});
+
+    auto current_actions_dag = expression_actions.getActionsDAG();
+    for (const auto * node_after_join : actions_after_join)
+    {
+        if (!current_actions_dag->containsNode(node_after_join))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} is not in the expression actions dag", fmt::ptr(node_after_join));
+    }
 }
 
 JoinStepLogical::~JoinStepLogical() = default;
@@ -1010,23 +1017,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
         return {};
 
     if (auto filter_condition = concatConditions(join_expression, side))
-    {
-        auto filter_to_push_down = ActionsDAG::createActionsForConjunction({filter_condition.getNode()}, stream_header.getColumnsWithTypeAndName());
-        return filter_to_push_down;
-
-        // filter_column_name = filter_condition.getColumnName();
-        // ActionsDAG new_dag = JoinExpressionActions::getSubDAG(filter_condition);
-        // if (new_dag.getOutputs().size() != 1)
-        //     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 output column, got {}", new_dag.getOutputs().size());
-
-        // const auto & inputs = new_dag.getInputs();
-        // auto & outputs = new_dag.getOutputs();
-        // if (std::ranges::contains(inputs, outputs.front()))
-        //     outputs.clear();
-        // outputs.append_range(inputs);
-
-        // return std::move(new_dag);
-    }
+        return ActionsDAG::createActionsForConjunction({filter_condition.getNode()}, stream_header.getColumnsWithTypeAndName());
 
     return {};
 }
@@ -1095,13 +1086,31 @@ std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & c
 QueryPlanStepPtr JoinStepLogical::clone() const
 {
     auto new_join_operator = join_operator;
-    auto new_expression_actions = expression_actions.clone(new_join_operator.expression);
+    ActionsDAG::NodePtrMap node_map;
+    auto new_expression_actions = expression_actions.clone(node_map);
+
+    auto remap = [&](const auto * node)
+    {
+        auto it = node_map.find(node);
+        if (it == node_map.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find node in node map");
+        return it->second;
+    };
+
+    auto new_actions_dag = new_expression_actions.getActionsDAG();
+    auto new_actions_after_join = actions_after_join;
+    for (const auto * & action : new_actions_after_join)
+        action = remap(action);
+    for (auto & action : new_join_operator.expression)
+        action = JoinActionRef(remap(action.getNode()), new_expression_actions);
+    for (auto & action : new_join_operator.residual_filter)
+        action = JoinActionRef(remap(action.getNode()), new_expression_actions);
 
     auto result_step = std::make_unique<JoinStepLogical>(
         getInputHeaders().front(), getInputHeaders().back(),
         std::move(new_join_operator),
         std::move(new_expression_actions),
-        actions_after_join,
+        std::move(new_actions_after_join),
         join_settings,
         sorting_settings);
     result_step->setStepDescription(getStepDescription());

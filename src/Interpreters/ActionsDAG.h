@@ -474,6 +474,8 @@ public:
 
     static std::optional<ActionsForFilterPushDown> createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 
+    bool containsNode(const Node * node);
+
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
 
