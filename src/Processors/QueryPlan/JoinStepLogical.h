@@ -150,6 +150,8 @@ public:
 
     String getReadableRelationName() const;
 
+    ActionsDAG::NodeRawConstPtrs getActionsAfterJoin() const { return actions_after_join; }
+
 protected:
     void updateOutputHeader() override;
 

@@ -573,16 +573,16 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
     auto [expression_actions_dag, expression_actions_sources] = expression_actions.detachActionsDAG();
 
-    ActionsDAG::NodeRawConstPtrs join_outputs = query_graph.expression_actions.getActionsDAG()->getOutputs();
-
     ActionsDAG::NodeMapping node_mapping;
     query_graph.expression_actions.getActionsDAG()->mergeInplace(std::move(expression_actions_dag), node_mapping, true);
 
-    for (auto & output : join_outputs)
-    {
-        if (auto it = node_mapping.find(output); it != node_mapping.end())
-            output = it->second;
-    }
+    ActionsDAG::NodeRawConstPtrs join_outputs = query_graph.expression_actions.getActionsDAG()->getOutputs();
+
+    // for (auto & output : join_outputs)
+    // {
+    //     if (auto it = node_mapping.find(output); it != node_mapping.end())
+    //         output = it->second;
+    // }
 
     JoinExpressionActions::NodeToSourceMapping new_sources;
     for (const auto & [old_node, sources] : expression_actions_sources)
@@ -619,12 +619,6 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot determine source relations for node {}", out_node->result_name);
     }
 
-    /// Non-reorderable joins
-    if (isLeftOrFull(join_operator.kind))
-        query_graph.dependencies.emplace_back(right_mask, left_mask, join_operator.kind);
-    if (isRightOrFull(join_operator.kind))
-        query_graph.dependencies.emplace_back(left_mask, right_mask, reverseJoinKind(join_operator.kind));
-
     if (!left_changes_types.empty())
         query_graph.type_changes.emplace_back(left_mask, std::move(left_changes_types));
     if (!right_changes_types.empty())
@@ -645,6 +639,14 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
             }
         }
     }
+
+
+    /// Non-reorderable joins
+    if (isLeftOrFull(join_operator.kind))
+        query_graph.dependencies.emplace_back(right_mask, left_mask, join_operator.kind);
+    if (isRightOrFull(join_operator.kind))
+        query_graph.dependencies.emplace_back(left_mask, right_mask, reverseJoinKind(join_operator.kind));
+
     UNUSED(residual_filter);
 }
 
@@ -765,6 +767,22 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             for (const auto & action : join_operator.residual_filter)
                 required_output_nodes.push_back(action.getNode());
 
+            ActionsDAG::NodeMapping current_step_type_changes;
+            auto joined_mask = entry->relations;
+            for (const auto & [sources, new_inputs] : query_graph_builder.type_changes)
+            {
+                if (isSubsetOf(sources, joined_mask))
+                {
+                    for (const auto * new_input : new_inputs)
+                    {
+                        auto it = input_node_map.find(new_input->result_name);
+                        if (it == input_node_map.end())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in inputs of dag {}", new_input->result_name, global_actions_dag->dumpDAG());
+                        current_step_type_changes[it->second] = new_input;
+                    }
+                }
+            }
+
             ActionsDAG::NodeMapping current_inputs;
 
             auto process_input_column = [&](const auto & column)
@@ -775,7 +793,11 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 if (!it->second->result_type->equals(*column.type))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} expected to habe type {}", column.dumpStructure(), it->second->result_type->getName());
                 current_inputs[it->second] = it->second;
-                required_output_nodes.push_back(it->second);
+
+                auto out_node = it->second;
+                if (auto it2 = current_step_type_changes.find(out_node); it2 != current_step_type_changes.end())
+                    out_node = it2->second;
+                required_output_nodes.push_back(out_node);
             };
 
             for (const auto & column : left_header)
@@ -803,19 +825,11 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             /// Setup outputs after join
             dag_outputs.clear();
             /// Set current inputs to nodes after current join
-            auto joined_mask = entry->relations;
-            for (const auto & [sources, new_inputs] : query_graph_builder.type_changes)
+            for (auto & e : input_node_map)
             {
-                if (isSubsetOf(sources, joined_mask))
-                {
-                    for (const auto * new_input : new_inputs)
-                    {
-                        auto it = input_node_map.find(new_input->result_name);
-                        if (it == input_node_map.end())
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} not found in inputs of dag {}", new_input->result_name, global_actions_dag->dumpDAG());
-                        it->second = new_input;
-                    }
-                }
+                auto it = current_step_type_changes.find(e.second);
+                if (it != current_step_type_changes.end())
+                    e.second = it->second;
             }
 
             /// Columns returned from JOIN is input with possibly corrected type

@@ -2047,7 +2047,7 @@ DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
     - 'true': Always swap tables (the left table is the build table).
 )", 0) \
 DECLARE(Bool, query_plan_optimize_join_order, true, R"(
-    Optimize the order of joins within the same subquery. Currenly only supported for very limited cases.
+    Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
 )", 0) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
