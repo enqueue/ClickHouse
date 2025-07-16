@@ -114,10 +114,12 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     return query_builder->composeLoadAllQuery();
 }
 
-/// TODO(mstetsyuk): refactor all the code to return BlockIO
-/// this is needed because BlockIO has finish_callback which adds QueryFinish to system.query_log
-/// alternatively, introduce custom_metric_dictionary_reload_cpu_seconds and custom_metric_dictionary_reload_ram_bytes histogram metrics (just in private)
 QueryPipeline ClickHouseDictionarySource::loadAll()
+{
+    return std::get<QueryPipeline>(createStreamForQuery(load_all_query));
+}
+
+std::variant<QueryPipeline, BlockIO> ClickHouseDictionarySource::loadAllWithOptionalBlockIO()
 {
     return createStreamForQuery(load_all_query);
 }
@@ -125,19 +127,19 @@ QueryPipeline ClickHouseDictionarySource::loadAll()
 QueryPipeline ClickHouseDictionarySource::loadUpdatedAll()
 {
     String load_update_query = getUpdateFieldAndDate();
-    return createStreamForQuery(load_update_query);
+    return std::get<QueryPipeline>(createStreamForQuery((load_update_query)));
 }
 
 QueryPipeline ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-    return createStreamForQuery(query_builder->composeLoadIdsQuery(ids));
+    return std::get<QueryPipeline>(createStreamForQuery((query_builder->composeLoadIdsQuery(ids))));
 }
 
 
 QueryPipeline ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     String query = query_builder->composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
-    return createStreamForQuery(query);
+    return std::get<QueryPipeline>(createStreamForQuery(query));
 }
 
 bool ClickHouseDictionarySource::isModified() const
@@ -164,7 +166,7 @@ std::string ClickHouseDictionarySource::toString() const
     return "ClickHouse: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & query)
+std::variant<QueryPipeline, BlockIO> ClickHouseDictionarySource::createStreamForQuery(const String & query)
 {
     QueryPipeline pipeline;
 
@@ -185,16 +187,12 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
 
     if (configuration.is_local)
     {
-        pipeline = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second.pipeline;
-        pipeline.convertStructureTo(empty_sample_block.getColumnsWithTypeAndName());
+        BlockIO result = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
+        result.pipeline.convertStructureTo(empty_sample_block.getColumnsWithTypeAndName());
+        return result;
     }
-    else
-    {
-        pipeline = QueryPipeline(std::make_shared<RemoteSource>(
+    return QueryPipeline(std::make_shared<RemoteSource>(
             std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false, false));
-    }
-
-    return pipeline;
 }
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const

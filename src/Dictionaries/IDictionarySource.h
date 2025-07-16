@@ -2,7 +2,9 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/BlockIO.h>
 
+#include <variant>
 #include <vector>
 
 
@@ -21,6 +23,8 @@ public:
 
     /// Returns a pipe with all the data available from this source.
     virtual QueryPipeline loadAll() = 0;
+
+    virtual std::variant<QueryPipeline, BlockIO> loadAllWithOptionalBlockIO() { return loadAll(); }
 
     /// Returns a pipe with updated data available from this source.
     virtual QueryPipeline loadUpdatedAll() = 0;
