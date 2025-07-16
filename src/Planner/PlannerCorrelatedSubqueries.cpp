@@ -276,14 +276,9 @@ QueryPlan decorrelateQueryPlan(
 
         auto lhs_plan_header = lhs_plan.getCurrentHeader();
 
-        ColumnsWithTypeAndName output_columns_and_types;
-        output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan_header->getColumnsWithTypeAndName());
-        output_columns_and_types.insert_range(output_columns_and_types.cend(), decorrelated_plan_header->getColumnsWithTypeAndName());
-
         JoinExpressionActions join_expression_actions(
             lhs_plan_header->getColumnsWithTypeAndName(),
-            decorrelated_plan_header->getColumnsWithTypeAndName(),
-            output_columns_and_types);
+            decorrelated_plan_header->getColumnsWithTypeAndName());
 
         NameSet output_columns;
         output_columns.insert_range(lhs_plan_header->getNames());
@@ -568,14 +563,9 @@ QueryPlan buildLogicalJoin(
     const auto & lhs_plan_header = left_plan.getCurrentHeader();
     const auto & rhs_plan_header = right_plan.getCurrentHeader();
 
-    ColumnsWithTypeAndName output_columns_and_types;
-    output_columns_and_types.insert_range(output_columns_and_types.cend(), lhs_plan_header->getColumnsWithTypeAndName());
-    output_columns_and_types.emplace_back(rhs_plan_header->getByName(correlated_subquery.action_node_name));
-
     JoinExpressionActions join_expression_actions(
         lhs_plan_header->getColumnsWithTypeAndName(),
-        rhs_plan_header->getColumnsWithTypeAndName(),
-        output_columns_and_types);
+        rhs_plan_header->getColumnsWithTypeAndName());
 
     NameSet output_columns;
     output_columns.insert_range(lhs_plan_header->getNames());

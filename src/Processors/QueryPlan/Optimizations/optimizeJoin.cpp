@@ -758,8 +758,11 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 join_operator.kind = reverseJoinKind(join_operator.kind);
             }
 
-            const auto & left_header = left_child_node->step->getOutputHeader();
-            const auto & right_header = right_child_node->step->getOutputHeader();
+            auto left_header_ptr = left_child_node->step->getOutputHeader();
+            auto right_header_ptr = right_child_node->step->getOutputHeader();
+
+            const auto & left_header = *left_header_ptr;
+            const auto & right_header = *right_header_ptr;
 
             ActionsDAG::NodeRawConstPtrs required_output_nodes;
             for (const auto & action : join_operator.expression)
@@ -858,8 +861,8 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             join_operator.residual_filter.clear();
 
             auto join_step = std::make_unique<JoinStepLogical>(
-                left_header,
-                right_header,
+                left_header_ptr,
+                right_header_ptr,
                 std::move(join_operator),
                 std::move(current_expression_actions),
                 dag_outputs,

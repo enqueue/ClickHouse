@@ -61,8 +61,8 @@ public:
         SortingStep::Settings sorting_settings_);
 
     JoinStepLogical(
-        const Block & left_header_,
-        const Block & right_header_,
+        const SharedHeader & left_header_,
+        const SharedHeader & right_header_,
         JoinOperator join_operator_,
         JoinExpressionActions join_expression_actions_,
         std::vector<const ActionsDAG::Node *> actions_after_join_,
@@ -118,7 +118,7 @@ public:
     }
 
     void addConditions(ActionsDAG actions_dag);
-    std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(JoinTableSide side, const Header & stream_header);
+    std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(JoinTableSide side, const SharedHeader & stream_header);
 
     static void buildPhysicalJoin(
         QueryPlan::Node & node,

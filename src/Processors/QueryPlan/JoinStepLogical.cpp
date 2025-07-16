@@ -155,8 +155,8 @@ JoinStepLogical::JoinStepLogical(
 }
 
 JoinStepLogical::JoinStepLogical(
-    const Block & left_header_,
-    const Block & right_header_,
+    const SharedHeader & left_header_,
+    const SharedHeader & right_header_,
     JoinOperator join_operator_,
     JoinExpressionActions join_expression_actions_,
     std::vector<const ActionsDAG::Node *> actions_after_join_,
@@ -293,7 +293,7 @@ void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const
 void JoinStepLogical::updateOutputHeader()
 {
     auto actions_dag = expression_actions.getActionsDAG();
-    Block & header = output_header.emplace(actions_dag->getResultColumns());
+    Block header(actions_dag->getResultColumns());
 
     for (auto & column : header)
     {
@@ -581,8 +581,8 @@ static void addSortingForMergeJoin(
     /// Sorting on a stream with const keys can start returning rows immediately and pipeline may stuck.
     /// Note: it's also doesn't work with the read-in-order optimization.
     /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
-    bool has_non_const_keys = has_non_const(left_node->step->getOutputHeader(), join_clause.key_names_left)
-        && has_non_const(right_node->step->getOutputHeader() , join_clause.key_names_right);
+    bool has_non_const_keys = has_non_const(*left_node->step->getOutputHeader(), join_clause.key_names_left)
+        && has_non_const(*right_node->step->getOutputHeader() , join_clause.key_names_right);
     if (join_settings.max_rows_in_set_to_optimize_join > 0 && join_type_allows_filtering && has_non_const_keys)
     {
         auto * left_set = add_create_set(left_node, join_clause.key_names_left, JoinTableSide::Left);
@@ -904,7 +904,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     for (const auto * child : children)
     {
-        for (const auto & column : child->step->getOutputHeader())
+        for (const auto & column : *child->step->getOutputHeader())
         {
             auto input_node = expression_actions.findNode(column.name, /* is_input */ true);
             used_expressions.insert(std::move(input_node));
@@ -937,8 +937,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
     table_join->setUsedColumns(residual_dag.getRequiredColumnsNames());
     table_join->setJoinOperator(join_operator);
 
-    SharedHeader left_sample_block = blockWithActionsDAGOutput(*left_dag);
-    SharedHeader right_sample_block = blockWithActionsDAGOutput(*right_dag);
+    SharedHeader left_sample_block = blockWithActionsDAGOutput(left_dag);
+    SharedHeader right_sample_block = blockWithActionsDAGOutput(right_dag);
 
     // std::cerr << left_sample_block.dumpStructure() << std::endl;
     // std::cerr << right_sample_block.dumpStructure() << std::endl;
@@ -1009,7 +1009,7 @@ void JoinStepLogical::buildPhysicalJoin(
     node = std::move(new_node);
 }
 
-std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterActions(JoinTableSide side, const Header & stream_header)
+std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterActions(JoinTableSide side, const SharedHeader & stream_header)
 {
     if (join_operator.strictness != JoinStrictness::All)
         return {};
@@ -1020,7 +1020,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
         return {};
 
     if (auto filter_condition = concatConditions(join_expression, side))
-        return ActionsDAG::createActionsForConjunction({filter_condition.getNode()}, stream_header.getColumnsWithTypeAndName());
+        return ActionsDAG::createActionsForConjunction({filter_condition.getNode()}, stream_header->getColumnsWithTypeAndName());
 
     return {};
 }
@@ -1067,7 +1067,7 @@ std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & c
     auto left_header = ctx.input_headers.front();
     auto right_header = ctx.input_headers.back();
     auto id_to_node_map = actions_dag.getIdToNodeMap();
-    JoinExpressionActions expression_actions(left_header, right_header, std::move(actions_dag));
+    JoinExpressionActions expression_actions(*left_header, *right_header, std::move(actions_dag));
 
     auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions);
 
