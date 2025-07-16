@@ -606,7 +606,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     ActionsDAG::NodeRawConstPtrs right_changes_types;
     for (const auto * out_node : join_outputs)
     {
-        if (out_node->type == ActionsDAG::ActionType::INPUT)
+        if (out_node->type == ActionsDAG::ActionType::INPUT || out_node->type == ActionsDAG::ActionType::COLUMN)
             continue;
         auto source = JoinActionRef(out_node, query_graph.expression_actions).getSourceRelations();
         if (source.count() == 0)
