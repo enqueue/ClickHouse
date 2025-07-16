@@ -187,13 +187,13 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinReorderMicroseconds);
 
     std::shared_ptr<DPJoinEntry> best_plan;
-    if (query_graph.relation_stats.size() <= APPLY_DP_THRESHOLD)
-    {
-        LOG_TRACE(log, "Solving join order using dynamic programming");
-        best_plan = solveDP();
-        if (!best_plan)
-            LOG_TRACE(log, "Dynamic programming failed to find a valid join order");
-    }
+    // if (query_graph.relation_stats.size() <= APPLY_DP_THRESHOLD)
+    // {
+    //     LOG_TRACE(log, "Solving join order using dynamic programming");
+    //     best_plan = solveDP();
+    //     if (!best_plan)
+    //         LOG_TRACE(log, "Dynamic programming failed to find a valid join order");
+    // }
 
     if (!best_plan)
     {
@@ -218,7 +218,8 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
     {
         if (!edge)
             continue;
-        if (!isSubsetOf(edge.getSourceRelations(), joined_rels))
+        const auto & edge_sources = edge.getSourceRelations();
+        if (!isSubsetOf(edge_sources, joined_rels))
             continue;
 
         auto pinned = query_graph.pinned[edge];
