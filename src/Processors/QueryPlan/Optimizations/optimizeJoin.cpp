@@ -59,11 +59,13 @@ RelationStats getDummyStats(ContextPtr context, const String & table_name);
 namespace QueryPlanOptimizations
 {
 
-static bool functionDoesNotChangeNumberOfValues(std::string_view function_name)
+static size_t functionDoesNotChangeNumberOfValues(std::string_view function_name, size_t num_args)
 {
-    return function_name == "materialize" ||
-        function_name == "_CAST" ||
-        function_name == "toNullable";
+    if (function_name == "materialize" || function_name == "_CAST" || function_name == "CAST" || function_name == "toNullable")
+        return 1;
+    if (function_name == "firstTruthy")
+        return num_args;
+    return 0;
 }
 
 NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
@@ -80,9 +82,15 @@ NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & acti
     std::unordered_set<const ActionsDAG::Node *> visited_nodes;
     for (const auto * out_node : actions.getOutputs())
     {
-        const auto * node = out_node;
-        while (true)
+
+        std::stack<const ActionsDAG::Node *> nodes_to_process;
+        nodes_to_process.push(out_node);
+
+        while (!nodes_to_process.empty())
         {
+            const auto * node = nodes_to_process.top();
+            nodes_to_process.pop();
+
             auto [_, inserted] = visited_nodes.insert(node);
             if (!inserted)
                 break;
@@ -94,14 +102,19 @@ NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & acti
             }
 
             if (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
-                node = node->children[0];
-
-            if (node->type == ActionsDAG::ActionType::FUNCTION &&
-                node->function_base &&
-                node->children.size() == 1 &&
-                functionDoesNotChangeNumberOfValues(node->function_base->getName()))
             {
-                node = node->children[0];
+                nodes_to_process.push(node->children[0]);
+            }
+            else if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
+            {
+                auto number_of_args = functionDoesNotChangeNumberOfValues(node->function_base->getName(), node->children.size());
+                for (const auto * child : node->children)
+                {
+                    if (number_of_args == 0)
+                        break;
+                    number_of_args -= 1;
+                    nodes_to_process.push(child);
+                }
             }
         }
     }
@@ -111,7 +124,7 @@ NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & acti
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
     std::unordered_map<String, ColumnStats> original = std::move(mapped);
-    for (auto && [name, value] : original)
+    for (const auto & [name, value] : original)
     {
         for (const auto & remapped : backTrackColumnsInDag(name, actions))
             mapped[remapped] = std::move(value);
