@@ -151,6 +151,11 @@ JoinStepLogical::JoinStepLogical(
     , join_settings(std::move(join_settings_))
     , sorting_settings(std::move(sorting_settings_))
 {
+    if (!changed_types.empty())
+    {
+        /// FIXME: do not reorder join with `using` clause
+        optimized = true;
+    }
     addToNullableIfNeeded(expression_actions, join_operator.kind, use_nulls_, required_output_columns_, actions_after_join, changed_types);
     updateInputHeaders({left_header_, right_header_});
 }

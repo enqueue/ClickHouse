@@ -205,12 +205,13 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
         // }
 
         const auto & result_type = using_column_node.getResultType();
-        auto cast_to_super = [&result_type](auto & dag, const auto & nodes)
+        auto cast_to_super = [&result_type, &changed_types](auto & dag, const auto & nodes)
         {
             auto arg = nodes.at(0);
             // return &dag.addCast(*e, result_type, {});
             const auto & casted = dag.addCast(*arg, result_type, {});
-            return &dag.addAlias(casted, arg->result_name);
+            changed_types[arg->result_name] = &dag.addAlias(casted, arg->result_name);
+            return &casted;
         };
 
         for (const auto & inner_column : inner_columns)
@@ -220,8 +221,8 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             {
                 String input_column_name = arg.getColumnName();
                 auto casted_arg = JoinActionRef::transform({arg}, cast_to_super);
-                changed_types[input_column_name] = casted_arg.getNode();
-                // arg = casted_arg;
+                // changed_types[input_column_name] = casted_arg.getNode();
+                arg = casted_arg;
             }
 
             if (arg.fromNone())
