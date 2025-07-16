@@ -303,8 +303,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
     if (headers.size() != 2)
         return true;
 
-    const auto & left_stream_input_header = headers.front();
-    const auto & right_stream_input_header = headers.back();
+    auto left_stream_input_header = headers.front();
+    auto right_stream_input_header = headers.back();
 
     auto updated_table_join = std::make_shared<TableJoin>(table_join);
     updated_table_join->swapSides();
@@ -370,8 +370,8 @@ void addSortingForMergeJoin(
     /// Sorting on a stream with const keys can start returning rows immediately and pipeline may stuck.
     /// Note: it's also doesn't work with the read-in-order optimization.
     /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
-    bool has_non_const_keys = has_non_const(left_node->step->getOutputHeader(), join_clause.key_names_left)
-        && has_non_const(right_node->step->getOutputHeader() , join_clause.key_names_right);
+    bool has_non_const_keys = has_non_const(*left_node->step->getOutputHeader(), join_clause.key_names_left)
+        && has_non_const(*right_node->step->getOutputHeader() , join_clause.key_names_right);
 
     if (join_settings.max_rows_in_set_to_optimize_join > 0 && join_type_allows_filtering && has_non_const_keys)
     {

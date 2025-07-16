@@ -136,8 +136,8 @@ static void addToNullableIfNeeded(
 }
 
 JoinStepLogical::JoinStepLogical(
-    const Block & left_header_,
-    const Block & right_header_,
+    SharedHeader left_header_,
+    SharedHeader right_header_,
     JoinOperator join_operator_,
     JoinExpressionActions join_expression_actions_,
     const NameSet & required_output_columns_,
@@ -293,7 +293,7 @@ void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const
 void JoinStepLogical::updateOutputHeader()
 {
     auto actions_dag = expression_actions.getActionsDAG();
-    Header & header = output_header.emplace(actions_dag->getResultColumns());
+    Block & header = output_header.emplace(actions_dag->getResultColumns());
 
     for (auto & column : header)
     {
@@ -303,6 +303,8 @@ void JoinStepLogical::updateOutputHeader()
 
     if (!header.columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is empty, actions_dag: {}", actions_dag->dumpDAG());
+
+    output_header = std::make_shared<const Block>(std::move(header));
 }
 
 JoinStepLogicalLookup::JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoinStorage prepared_join_storage_)
@@ -435,12 +437,13 @@ bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, Table
 }
 
 
-static Block blockWithColumns(ColumnsWithTypeAndName columns)
+static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
 {
-    Block block;
-    for (const auto & column : columns)
-        block.insert(ColumnWithTypeAndName(column.column ? column.column : column.type->createColumn(), column.type, column.name));
-    return block;
+    ColumnsWithTypeAndName columns;
+    columns.reserve(actions_dag.getOutputs().size());
+    for (const auto & node : actions_dag.getOutputs())
+        columns.emplace_back(node->column ? node->column : node->result_type->createColumn(), node->result_type, node->result_name);
+    return std::make_shared<const Block>(Block{columns});
 }
 
 using QueryPlanNode = QueryPlan::Node;
@@ -934,8 +937,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
     table_join->setUsedColumns(residual_dag.getRequiredColumnsNames());
     table_join->setJoinOperator(join_operator);
 
-    Block left_sample_block = blockWithColumns(left_dag.getResultColumns());
-    Block right_sample_block = blockWithColumns(right_dag.getResultColumns());
+    SharedHeader left_sample_block = blockWithActionsDAGOutput(*left_dag);
+    SharedHeader right_sample_block = blockWithActionsDAGOutput(*right_dag);
 
     // std::cerr << left_sample_block.dumpStructure() << std::endl;
     // std::cerr << right_sample_block.dumpStructure() << std::endl;

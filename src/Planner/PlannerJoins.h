@@ -280,8 +280,8 @@ struct JoinAlgorithmParams
 std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
-    const Block & left_table_expression_header,
-    const Block & right_table_expression_header,
+    SharedHeader left_table_expression_header,
+    SharedHeader right_table_expression_header,
     const JoinAlgorithmParams & params);
 
 using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;

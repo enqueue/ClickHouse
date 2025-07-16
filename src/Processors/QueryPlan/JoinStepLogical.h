@@ -50,8 +50,8 @@ class JoinStepLogical final : public IQueryPlanStep
 {
 public:
     JoinStepLogical(
-        const Block & left_header_,
-        const Block & right_header_,
+        SharedHeader left_header_,
+        SharedHeader right_header_,
         JoinOperator join_operator_,
         JoinExpressionActions join_expression_actions_,
         const NameSet & required_output_columns_,

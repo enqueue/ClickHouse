@@ -460,13 +460,15 @@ static String getQueryDisplayLabel(const QueryTreeNodePtr & node, bool display_i
 }
 
 std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
-    const Block & left_header,
-    const Block & right_header,
+    SharedHeader left_header,
+    SharedHeader right_header,
     const NameSet & outer_scope_columns,
     const JoinNode & join_node,
     const PlannerContextPtr & planner_context)
 {
-    JoinOperatorBuildContext build_context(join_node, left_header, right_header, planner_context);
+    const auto & left_columns = left_header->getColumnsWithTypeAndName();
+    const auto & right_columns = right_header->getColumnsWithTypeAndName();
+    JoinOperatorBuildContext build_context(join_node, left_columns, right_columns, planner_context);
 
     const auto & join_on_expression = join_node.getJoinExpression();
     auto join_expression_constant = tryExtractConstantFromConditionNode(join_on_expression);
